@@ -1,68 +1,45 @@
 # S04 - Шаблон STRIDE per element (матрица)
 
-Этот файл - рабочая матрица **без оценок**: фиксируем релевантные угрозы для каждого элемента и потока из вашей DFD (mermaid), связываем их с NFR из S03 и накидываем идею mitigation (для будущих ADR на S05).
+## Матрица угроз STRIDE
 
-> Рабочее расположение у студента: `SEMINARS/S04/S04_stride_matrix.md`.
-> Оценивание L×I (1-5) и выбор Top-5 делаются **отдельно** в `S04_risk_scoring.md`.
-> Семинарские артефакты в `/EVIDENCE/` **не кладём**.
+| Element                                   | Data/Boundary            | Threat (S/T/R/I/D/E) | Description                                                 | NFR link (ID)    | Mitigation idea (ADR later)                     |
+| ----------------------------------------- | ------------------------ | -------------------- | ----------------------------------------------------------- | ---------------- | ----------------------------------------------- |
+| **USER_AGENT**                            | Клиент/Браузер           | S                    | Подмена легитимного пользователя через кражу учетных данных | NFR-009          | MFA + короткоживущие JWT токены                 |
+| **USER_AGENT**                            | Клиент/Браузер           | R                    | Отрицание операций из-за недостаточного аудита действий     | NFR-008          | Централизованный аудит с WORM-хранилищем        |
+| **Edge: USER_AGENT → Wishlist_GW**        | JWT/HTTPS/correlation_id | S                    | Подделка/перехват JWT токенов при передаче                  | NFR-009          | JWT с коротким TTL + refresh tokens             |
+| **Edge: USER_AGENT → Wishlist_GW**        | JWT/HTTPS/correlation_id | T                    | Изменение параметров запроса для обхода лимитов пагинации   | NFR-003          | Строгая валидация limit/offset на сервере       |
+| **Edge: USER_AGENT → Wishlist_GW**        | JWT/HTTPS/correlation_id | D                    | DDoS атака на API эндпойнты                                 | NFR-001, NFR-002 | Rate limiting + WAF на API Gateway              |
+| **Wishlist_GW**                           | API Gateway              | D                    | Перегрузка большим количеством одновременных запросов       | NFR-001, NFR-002 | Автоскейлинг + circuit breaker                  |
+| **Wishlist_GW**                           | API Gateway              | I                    | Утечка данных через детализированные ошибки API             | NFR-003          | RFC 7807 без stack traces                       |
+| **Edge: Wishlist_GW → Wishlist_Service**  | DTO / correlation_id     | I                    | Перехват конфиденциальных данных между микросервисами       | NFR-005, NFR-007 | mTLS между сервисами                            |
+| **Wishlist_Service**                      | Бизнес-логика            | E                    | Обход RBAC через уязвимости в бизнес-логике                 | NFR-005, NFR-006 | Проверка прав на каждом уровне + unit-тесты     |
+| **Wishlist_Service**                      | Бизнес-логика            | T                    | Изменение логики для обхода tenant isolation                | NFR-006          | Strict RBAC policies + code review              |
+| **Edge: Wishlist_Service → PostgreSQL**   | SQL/ORM                  | T                    | SQL-инъекции через непараметризованные запросы              | NFR-010          | Prepared statements + ORM validation            |
+| **Edge: Wishlist_Service → PostgreSQL**   | SQL/ORM                  | I                    | Нарушение изоляции тенантов на уровне БД                    | NFR-005          | Row-level security + tenant_id в каждом запросе |
+| **PostgreSQL**                            | База данных              | I                    | Прямой доступ к БД с данными всех тенантов                  | NFR-005, NFR-007 | Database encryption + strict access controls    |
+| **PostgreSQL**                            | База данных              | D                    | Отказ службы из-за ресурсоемких SQL-запросов                | NFR-010          | Query timeouts + connection pooling             |
+| **Edge: Wishlist_Service → Logs_Service** | JSON logs/traces         | I                    | Перехват логов с немасскированными PII                      | NFR-007          | PII masking перед отправкой в логи              |
+| **Edge: Wishlist_Service → Logs_Service** | JSON logs/traces         | R                    | Потеря аудит-трейла при передаче                            | NFR-008          | Guaranteed delivery через message queue         |
+| **Logs_Service**                          | Административный сервис  | I                    | Доступ к логам с конфиденциальной информацией               | NFR-007          | Role-based access to logs + encryption          |
+| **Logs_Service**                          | Административный сервис  | T                    | Модификация/удаление аудит-логов                            | NFR-008          | Immutable log storage (WORM)                    |
+| **Edge: Logs_Service → Logs_PostgreSQL**  | SQL/ORM                  | T                    | Изменение исторических логов в хранилище                    | NFR-008          | Append-only database configuration              |
+| **Edge: Logs_Service → Logs_PostgreSQL**  | SQL/ORM                  | I                    | Утечка аудит-логов с PII из хранилища                       | NFR-007          | Column-level encryption для PII полей           |
+| **Logs_PostgreSQL**                       | База данных логов        | I                    | Неавторизованный доступ к полным аудит-логам                | NFR-007, NFR-008 | Database encryption + strict access controls    |
 
----
+## Ключевые наблюдения
 
-## Как работать с матрицей
+### Наиболее уязвимые элементы:
 
-1. Возьмите элементы вашей DFD: **узлы** (API, Service, DB, External) и **рёбра/потоки** (JWT, PII, files, payments).
-2. Для **каждого** элемента пройдите буквы **STRIDE** и зафиксируйте **только релевантные** угрозы (0-2 на букву).
-3. Для каждой угрозы:
+1. **USER_AGENT → Wishlist_GW** - граница доверия с внешним миром
+2. **Wishlist_Service** - центральный узел бизнес-логики и RBAC
+3. **PostgreSQL** - основное хранилище конфиденциальных данных
 
-   - кратко опишите **Description** (1-2 предложения, по делу);
-   - укажите **NFR link (ID)** из реестра S03 (или `need NFR`, если такого ещё нет);
-   - добавьте **Mitigation idea (ADR later)** - короткое имя решения, которое пойдёт в ADR на S05.
+### Критические NFR для защиты:
 
----
+- **NFR-009** (AuthN) - защита от spoofing
+- **NFR-005/006** (AuthZ/RBAC) - защита от elevation of privilege
+- **NFR-001/002** (Performance/Scaling) - защита от DoS
+- **NFR-007** (Privacy/PII) - защита от information disclosure
+- **NFR-008** (Auditability) - защита от repudiation
 
-## Легенда STRIDE
-
-- **S - Spoofing:** подмена идентичности/токена.
-- **T - Tampering:** изменение данных/запросов/конфигурации.
-- **R - Repudiation:** отрицание действий (нет аудита/трассировки).
-- **I - Information disclosure:** утечка конфиденциальных данных (PII/секреты).
-- **D - Denial of service:** отказ в обслуживании (ресурсное истощение/«залипание»).
-- **E - Elevation of privilege:** повышение привилегий/обход RBAC/тенант-изоляции.
-
----
-
-## Примеры строк (образец заполнения)
-
-| Element                      | Data/Boundary | Threat (S/T/R/I/D/E) | Description                                            | NFR link (ID)                   | Mitigation idea (ADR later)               |
-| ---------------------------- | ------------- | -------------------- | ------------------------------------------------------ | ------------------------------- | ----------------------------------------- |
-| Edge: Internet → API         | JWT / public  | S                    | Повтор/подмена токена, reuse истёкшего/украденного JWT | NFR-AuthN, NFR-RateLimit        | JWT TTL+Refresh, rate limit на `/auth/*`  |
-| Node: Service                | Logs          | I                    | PII в логах и сообщениях об ошибках                    | NFR-Privacy/PII, NFR-API-Errors | Маскирование PII, RFC7807 без стэктрейсов |
-| Edge: Service → External API | HTTP/gRPC     | D                    | Залипание без timeout/retry/circuit breaker            | NFR-Timeouts/Retry/CB           | Timeout≤2s, retry≤3 с джиттером, CB       |
-
-> После заполнения матрицы **перенесите уникальные/объединённые риски** в `S04_risk_scoring.md` для приоритизации L×I (1-5) и выбора Top-5.
-
----
-
-## Матрица для заполнения
-
-| Element | Data/Boundary | Threat (S/T/R/I/D/E) | Description | NFR link (ID) | Mitigation idea (ADR later) |
-| ------- | ------------- | -------------------- | ----------- | ------------- | --------------------------- |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-|         |               |                      |             |               |                             |
-
----
-
-## Самопроверка (быстро)
-
-- [ ] Пройдены **все узлы и рёбра** вашей DFD.
-- [ ] У угроз стоят **NFR link (ID)** или пометка `need NFR`.
-- [ ] У каждой угрозы есть понятная **Mitigation idea** (будущий ADR).
-- [ ] Нет «воды»: кратко, по делу, без оценок L/I (они - в `S04_risk_scoring.md`).
+Все митигации готовы для преобразования в ADR на следующем этапе.
