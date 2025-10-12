@@ -106,20 +106,13 @@ flowchart LR
   - **When** операция логируется<br>
   - **Then** email не фигурирует в логах
 
-### NFR-008. Application auditability
-
-- **AC (GWT):**
-  - **Given** рядовой пользователь пытается изменить роль пользователя<br>
-  - **When** POST /api/org/users/{id}/role
-  - **Then** 403, audit log содержит: actor, target, old_role, new_role, timestamp, status
-
 ---
 
 ### Краткие ADR (минимум 2) - архитектурные решения S05
 
 #### ADR-001 - PII Masking and Anonymization in Logs
 
-- **Context (угрозы/NFR):** R-01 (Утечка PII), NFR-007 (Privacy/PII), NFR-008 (Auditability).
+- **Context (угрозы/NFR):** R-01 (Утечка PII), NFR-007 (Privacy/PII).
 - **Decision:** Внедрение автоматического маскирования PII на уровне `Wishlist_Service` до отправки логов. Поля с PII помечаются аннотацией `@PiiField`.
 - **Trade-offs (кратко):** Небольшое увеличение CPU usage; необходимость аннотировать существующий код.
 - **DoD (готовность):** При логировании объекта с `email` в хранилище логов это поле отсутствует или замаскировано.
