@@ -40,16 +40,17 @@ flowchart LR
     Logs_PostgreSQL[База данных]
   end
 
-  %% --- Основные потоки с привязкой к NFR ---
-  USER_AGENT -- "JWT/HTTPS, correlation_id [NFR-001, NFR-009, NFR-004]" --> Wishlist_GW
-  Wishlist_GW -- "DTO, correlation_id, tenant_id [NFR-002, NFR-003, NFR-005, NFR-006]" --> Wishlist_Service
-  Wishlist_Service -- "SQL/ORM с tenant_id [NFR-010]" --> PostgreSQL
-  Wishlist_Service -- "Masked PII logs/traces, audit_events [NFR-007, NFR-008]" --> Logs_Service
-  Logs_Service -- "SQL/ORM [NFR-010]" --> Logs_PostgreSQL
+  %% --- Основные потоки ---
+  USER_AGENT -- "JWT/HTTPS/correlation_id [NFR: AuthN, RateLimit]" --> Wishlist_GW
+  Wishlist_GW -->|"DTO / correlation_id [NFR: API-Contract, Scalability, AuthZ]" | Wishlist_Service
+  Wishlist_Service -->|"SQL/ORM [NFR: Data-Integrity]"| PostgreSQL
+  Wishlist_Service -->|"JSON logs/traces/tenant_id [NFR: PII, Auditability]"| Logs_Service
+  Logs_Service -->|"SQL/ORM [NFR: Data-Integrity]"|Logs_PostgreSQL
+
 
   %% --- Оформление границ ---
   classDef boundary fill:#f6f6f6,stroke:#999,stroke-width:1px;
-  class Internet,Service,Logs_Storage boundary;
+  class Internet,Service,External,Logs_Storage boundary;
 
   %% --- Стиль для опциональных элементов (если включите) ---
   classDef opt fill:#fafafa,stroke:#bbb,stroke-dasharray: 3 2;
